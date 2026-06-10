@@ -26,10 +26,108 @@ FRAME_SIZE = WIDTH * HEIGHT * BYTES_PER_PIXEL
 
 WINDOW_NAME = "Bin Sequence Viewer"
 
+# since every position for the camera gimbal has 4 frames, we skip 4 ( we read one of every 4th frame)
+FRAME_SKIP = 4
+
+
+# mosaic canvas dimensions 
+cv2.namedWindow(
+    "Panorama",
+    cv2.WINDOW_NORMAL
+)
+cv2.resizeWindow(
+    "Panorama",
+    1600,
+    800
+)
+PAN_MIN_WIDTH  = 800
+PAN_MIN_HEIGHT = 400
+
+PAN_MAX_WIDTH  = 2400
+PAN_MAX_HEIGHT = 1200
+
+class RealTimeMosaic:
+
+    def __init__(self):
+
+
+        self.ppd = 20  # pixels per degree
+
+        self.width = 360 * self.ppd
+        self.height = 180 * self.ppd
+
+        self.canvas_sum = np.zeros(
+            (self.height, self.width),
+            dtype=np.float32
+        )
+
+        self.canvas_hits = np.zeros(
+            (self.height, self.width),
+            dtype=np.uint16
+        )
+
+    def add_frame(self, image, metadata):
 
 
 
+        coarse_az = bytes_to_float(metadata.courseAzAngle)
+        coarse_el = bytes_to_float(metadata.courseElAngle)
+        fine_az = bytes_to_float(metadata.fineInnerAzAngle)
+        fine_el = bytes_to_float(metadata.fineInnerElAngle)
 
+        az = coarse_az + fine_az
+        el = coarse_el + fine_el
+
+        hfov = bytes_to_float(metadata.irHfov )
+        vfov = bytes_to_float( metadata.irVfov)
+
+        print("From within 'add_frame()': " f"AZ={az:.2f} "f"EL={el:.2f} " f"HFOV={hfov:.2f} " f"VFOV={vfov:.2f}")
+
+        self.place_frame( image,az,el,hfov,vfov )
+
+    def place_frame(self,image,az,el,hfov,vfov):
+
+        frame_w = max( 1,int(hfov * self.ppd))
+
+        frame_h = max( 1,int(vfov * self.ppd))
+
+        scaled = cv2.resize( image,(frame_w, frame_h))
+
+        x = int((az % 360.0) * self.ppd)
+
+        y = int(self.height/2 + (el * self.ppd) )
+
+        x0 = x - frame_w//2
+        y0 = y - frame_h//2
+
+        for row in range(frame_h):
+
+            yy = y0 + row
+
+            if yy < 0 or yy >= self.height:
+                continue
+
+            for col in range(frame_w):
+
+                xx = (
+                    x0 + col
+                ) % self.width
+
+                self.canvas_sum[yy,xx] = scaled[row,col]
+                self.canvas_hits[yy,xx] = 1
+
+
+    def get_display(self):
+
+        display = self.canvas_sum / np.maximum(
+            self.canvas_hits,
+            1
+        )
+
+        return display.astype(np.uint8)
+
+
+        
 class frame_metadata:
     # these variables are metadata taken from each frame. every frame will have an instance of this class 
     frameId = bytearray([00,00,00,00])  #byte  0 1 2 3 
@@ -81,6 +179,7 @@ class frame_metadata:
 
 current_metadata = frame_metadata() #instance of the class to store frame meta data 
 current_metadata_hex = frame_metadata()
+mosaic = RealTimeMosaic() # instance of the mosaic class 
 # ------------------------------------------------------------------
 # meyta data byte array, bytes 0-154 
 # ------------------------------------------------------------------
@@ -133,6 +232,10 @@ def play_bin_directory():
     if not bin_files:
         print(f"No .bin files found in {DIR_PATH}")
         return
+
+    # since there is 4 frame duplicates only use 1 of every 4th file 
+    bin_files = bin_files[::FRAME_SKIP]
+
 
     print(f"Found {len(bin_files)} file(s)")
     print(f"Frame Size: {FRAME_SIZE:,} bytes")
@@ -209,8 +312,8 @@ def play_bin_directory():
                 # Bits [15:2] contain image
                 # Bits [1:0] are zero
                 # --------------------------------------------------
-                frame14 = frame >> 2
-
+                #frame14 = frame >> 2 # uncommment to show frame with meta data 
+                frame14 = frame[:-1,:] >> 2 # uncommment to show frame without meta data 
                 # --------------------------------------------------
                 # Convert 14-bit -> 8-bit for display
                 # 16383 = max 14-bit value
@@ -236,7 +339,18 @@ def play_bin_directory():
 
                 rotated_frame = cv2.rotate(display_frame, cv2.ROTATE_180)   # rotate rightside up 180
 
+                image_only = rotated_frame
+                mosaic.add_frame(
+                    image_only,
+                    current_metadata
+                )
+
+
+
                 cv2.imshow(WINDOW_NAME, rotated_frame) # to display raw, replace rotated w display_frame 
+
+                show_mosaic_window(mosaic.get_display())
+
 
                 key = cv2.waitKey(int(1000 / FPS)) & 0xFF
 
@@ -248,7 +362,6 @@ def play_bin_directory():
 
     cv2.destroyAllWindows()
     print("\nFinished playback.")
-
 
 
 
@@ -563,14 +676,55 @@ def print_organized_current_field_hex():
 
 
 
+
+
 #helper function 
 
+def show_mosaic_window(mosaic_image):
+
+    h, w = mosaic_image.shape[:2]
+
+    scale = min(
+        PAN_MAX_WIDTH / w,
+        PAN_MAX_HEIGHT / h,
+        1.0
+    )
+
+    display_w = max(
+        PAN_MIN_WIDTH,
+        min(int(w * scale), PAN_MAX_WIDTH)
+    )
+
+    display_h = max(
+        PAN_MIN_HEIGHT,
+        min(int(h * scale), PAN_MAX_HEIGHT)
+    )
+
+    display = cv2.resize(
+        mosaic_image,
+        (display_w, display_h)
+    )
+
+    cv2.imshow(
+        "Panorama",
+        display
+    )
 
 def bytes_to_hex_list(data):
     return [f"{b:02X}" for b in data]
 
+# bytes to float little endian
+def bytes_to_float(data):
+    return np.frombuffer(data, dtype='<f4')[0]
 
 
+def total_az(coarse_az, fine_az):
+    total_az = (coarse_az + fine_az)
+    return total_az
+
+def total_el (coarse_el,fine_el):
+    total_el = (coarse_el + fine_el)
+    return total_el
 
 if __name__ == "__main__":
     play_bin_directory()
