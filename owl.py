@@ -39,6 +39,7 @@ cv2.resizeWindow(
     1600,
     800
 )
+
 PAN_MIN_WIDTH  = 800
 PAN_MIN_HEIGHT = 400
 
@@ -73,9 +74,10 @@ class RealTimeMosaic:
         coarse_el = bytes_to_float(metadata.courseElAngle)
         fine_az = bytes_to_float(metadata.fineInnerAzAngle)
         fine_el = bytes_to_float(metadata.fineInnerElAngle)
+        mirror_el = bytes_to_float(metadata.mirrorElAngle)
 
-        az = coarse_az + fine_az
-        el = coarse_el + fine_el
+        az = coarse_az + fine_az 
+        el = coarse_el + fine_el + mirror_el
 
         hfov = bytes_to_float(metadata.irHfov )
         vfov = bytes_to_float( metadata.irVfov)
@@ -85,6 +87,7 @@ class RealTimeMosaic:
         self.place_frame( image,az,el,hfov,vfov )
 
     def place_frame(self,image,az,el,hfov,vfov):
+        print("Running place_frame() at: " f"AZ={az:.2f} "f"EL={el:.2f} " f"HFOV={hfov:.2f} " f"VFOV={vfov:.2f}")
 
         frame_w = max( 1,int(hfov * self.ppd))
 
@@ -94,7 +97,7 @@ class RealTimeMosaic:
 
         x = int((az % 360.0) * self.ppd)
 
-        y = int(self.height/2 + (el * self.ppd) )
+        y = int(self.height/2 + (el * self.ppd)) # 2 means elevation chages by 2 degrees
 
         x0 = x - frame_w//2
         y0 = y - frame_h//2
@@ -176,11 +179,16 @@ class frame_metadata:
     continousBuiltInTestStatus = bytearray([00]) #byte 154
 
 
+
+# ------------------------------------------------------------------
+# instances of classes
+# ------------------------------------------------------------------
+
 current_metadata = frame_metadata() #instance of the class to store frame meta data 
 current_metadata_hex = frame_metadata()
 mosaic = RealTimeMosaic() # instance of the mosaic class 
 # ------------------------------------------------------------------
-# meyta data byte array, bytes 0-154 
+# meta data byte array, bytes 0-154 
 # ------------------------------------------------------------------
 # Mutable byte array                 
 meta_data_array = bytearray([00,
@@ -356,7 +364,8 @@ def play_bin_directory(tile_mosaic = False):
                     return
 
                 frame_index += 1
-
+    print("Saving bibimbapBinBlasterMosaic.png")
+    cv2.imwrite("bibimbapBinBlasterMosaic.png", mosaic.get_display())
     cv2.destroyAllWindows()
     print("\nFinished playback.")
 
@@ -675,7 +684,6 @@ def print_organized_current_field_hex():
 
 
 
-#helper function 
 
 def show_mosaic_window(mosaic_image):
 
@@ -702,11 +710,9 @@ def show_mosaic_window(mosaic_image):
         (display_w, display_h)
     )
 
-    cv2.imshow(
-        "Panorama",
-        display
-    )
+    cv2.imshow("Panorama",display)
 
+# bytes to hex little endian
 def bytes_to_hex_list(data):
     return [f"{b:02X}" for b in data]
 
