@@ -272,7 +272,7 @@ class StepStareMosaic:
         dx = int(self.hfov * px_per_deg_x)
         dy = int(self.vfov * px_per_deg_y)
 
-        # center-based placement (THIS FIXES YOUR OFFSET BUG)
+        # center-based placement (THIS FIXES OFFSET BUG)
         x0 = int(cx - dx / 2)
         x1 = int(cx + dx / 2)
         y0 = int(cy - dy / 2)
@@ -318,7 +318,12 @@ folder = "bin_files"
 
 
 
-
+# ------------------------------------------------------------------
+# offsets made to make up for gimbal error   
+# ------------------------------------------------------------------
+COLUMN_GRID =7
+az_offset = 0
+count = 0
 
 
 
@@ -345,9 +350,16 @@ for i, (image, md) in enumerate(readerInstance.frame_stream("bin_files")):
 
     # Get angles
     az, el = mosaic.compute_angles(md, readerInstance)
+    
+
+    count = count +1 # counter for when offset is added 
+    #add offset every 7 frames 
+    if count % COLUMN_GRID == 1:  
+        az_offset = az_offset-1
 
     # Add to mosaic
-    mosaic.add_frame(img_vis, az, el, scale=0.3)
+    mosaic.add_frame(img_vis, (az+az_offset), el, scale=0.3)
+
 
     # Display live mosaic
     cv2.imshow("360 Mosaic", mosaic.get())
