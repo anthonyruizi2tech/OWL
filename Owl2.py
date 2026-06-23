@@ -224,7 +224,7 @@ class StepStareMosaic:
         self.height = height
         self.hfov = hfov
         self.vfov = vfov
-        self.resolution_scale = 2.0
+        self.resolution_scale = 2
 
         self.canvas = np.zeros((height, width), dtype=np.float32)
         self.weight = np.zeros((height, width), dtype=np.float32)
@@ -323,7 +323,7 @@ class StepStareMosaic:
 
         w = np.maximum(self.weight, 1e-6)
 
-        out = self.canvas / w
+        out = self.canvas /w
 
         return np.clip(out, 0, 255).astype(np.uint8)
 
@@ -344,6 +344,11 @@ folder = "bin_files"
 # Main()  
 # ------------------------------------------------------------------
 
+
+# create window name 
+WINDOW_NAME  = "360 Mosaic"
+cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
+cv2.resizeWindow(WINDOW_NAME, 1920, 1080)
 
 
 # ------------------------------------------------------------------
@@ -371,7 +376,7 @@ for i, (image, md) in enumerate(readerInstance.frame_stream("bin_files")):
     # ------------------------------------------------------------------
     # Show image
     # ------------------------------------------------------------------
-    cv2.imshow("Frame", img_vis)
+    #cv2.imshow("Frame", img_vis)
 
 
     readerInstance.print_metadata(md)
@@ -390,7 +395,7 @@ for i, (image, md) in enumerate(readerInstance.frame_stream("bin_files")):
 
 
     # Display live mosaic
-    cv2.imshow("360 Mosaic", mosaic.get())
+    cv2.imshow(WINDOW_NAME, mosaic.get())
 
 
     if cv2.waitKey(1) == 27:
