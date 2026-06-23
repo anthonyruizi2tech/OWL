@@ -226,12 +226,8 @@ class StepStareMosaic:
         self.vfov = vfov
         self.resolution_scale = 2.0
 
-        self.canvas = np.zeros((height, width), dtype=np.uint8)
+        self.canvas = np.zeros((height, width), dtype=np.float32)
         self.weight = np.zeros((height, width), dtype=np.float32)
-
-        # degrees per pixel (full spherical assumption)
-        self.az_ppd = width / 360.0
-        self.el_ppd = height / 180.0
 
     def compute_angles(self, md, reader):
         az_coarse = reader.f32(md.courseAzAngle)
@@ -290,14 +286,46 @@ class StepStareMosaic:
 
         # resize image to EXACT footprint
         img_patch = cv2.resize(img, (patch_w, patch_h), interpolation=cv2.INTER_AREA)
+        mask = self.feather_mask(patch_h, patch_w)
 
-        self.canvas[y0c:y1c, x0c:x1c] = np.maximum(
-            self.canvas[y0c:y1c, x0c:x1c],
-            img_patch
-        )
+        patch = img_patch.astype(np.float32)
+        w = mask
+
+        self.canvas[y0c:y1c, x0c:x1c] += patch * w
+        self.weight[y0c:y1c, x0c:x1c] += w
+
+
+    def feather_mask(self, h, w, edge_frac=0.10):
+        mask = np.ones((h, w), dtype=np.float32)
+
+        edge_x = int(w * edge_frac)
+        edge_y = int(h * edge_frac)
+
+        # left edge
+        for i in range(edge_x):
+            mask[:, i] *= i / edge_x
+
+        # right edge
+        for i in range(edge_x):
+            mask[:, w - 1 - i] *= i / edge_x
+
+        # top edge
+        for i in range(edge_y):
+            mask[i, :] *= i / edge_y
+
+        # bottom edge
+        for i in range(edge_y):
+            mask[h - 1 - i, :] *= i / edge_y
+
+        return mask
 
     def get(self):
-        return self.canvas
+
+        w = np.maximum(self.weight, 1e-6)
+
+        out = self.canvas / w
+
+        return np.clip(out, 0, 255).astype(np.uint8)
 
 # ------------------------------------------------------------------
 # configuration   
